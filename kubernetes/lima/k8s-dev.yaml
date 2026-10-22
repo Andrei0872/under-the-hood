@@ -1,0 +1,123 @@
+# Lima config for a Kubernetes debugging VM (Apple Silicon, arm64, Apple Virtualization.framework)
+
+minimumLimaVersion: "1.0.0"
+
+vmType: vz
+arch: aarch64
+
+cpus: 8
+memory: "16GiB"
+disk: "100GiB"
+
+images:
+  - location: "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-arm64.img"
+    arch: "aarch64"
+
+mounts: []
+
+# Lima's own containerd is not used; we configure a system one below for kubelet.
+containerd:
+  system: false
+  user: false
+
+ssh:
+  forwardAgent: true
+
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      export DEBIAN_FRONTEND=noninteractive
+
+      apt-get update
+      apt-get install -y \
+        build-essential git curl wget jq rsync unzip make gcc \
+        ripgrep fd-find tmux \
+        luarocks nodejs npm python3-venv \
+        iptables conntrack socat ebtables ethtool ipset \
+        containerd
+
+      # containerd: default config + systemd cgroup driver (cgroup v2 on Ubuntu 24.04)
+      mkdir -p /etc/containerd
+      containerd config default > /etc/containerd/config.toml
+      sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
+      systemctl enable containerd
+      systemctl restart containerd
+
+      # CNI: intentionally not installed here. local-up-cluster.sh installs the plugins
+      # *and* writes /etc/cni/net.d config, but only if /opt/cni/bin/loopback is missing.
+
+      # Go: latest stable arm64 (the k8s repo pins its own version in .go-version,
+      # and the hack/ scripts will tell you if it needs a specific one)
+      if [ ! -x /usr/local/go/bin/go ]; then
+        GOVER="$(curl -fsSL 'https://go.dev/VERSION?m=text' | head -n1)"
+        curl -fsSL "https://go.dev/dl/${GOVER}.linux-arm64.tar.gz" | tar -C /usr/local -xz
+      fi
+      cat > /etc/profile.d/go.sh <<'EOF'
+      export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin:$HOME/.local/bin
+      EOF
+
+      cat > /etc/profile.d/k8s.sh <<'EOF'
+      export KUBERNETES_PROVIDER=local
+      export KUBECONFIG=/var/run/kubernetes/admin.kubeconfig
+      export PATH=$HOME/src/kubernetes/third_party/etcd:$PATH
+      EOF
+
+      NVIM_VERSION=v0.11.7
+      if ! /opt/nvim/bin/nvim --version 2>/dev/null | head -n1 | grep -qx "NVIM ${NVIM_VERSION}"; then
+        rm -rf /opt/nvim && mkdir -p /opt/nvim
+        curl -fsSL "https://github.com/neovim/neovim/releases/download/${NVIM_VERSION}/nvim-linux-arm64.tar.gz" \
+          | tar -C /opt/nvim --strip-components=1 -xz
+      fi
+      ln -sf /opt/nvim/bin/nvim /usr/local/bin/nvim
+
+      # needed by kubelet / local-up-cluster
+      sysctl -w net.ipv4.ip_forward=1
+      echo 'net.ipv4.ip_forward=1' > /etc/sysctl.d/99-k8s.conf
+
+  - mode: user
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin
+      go install github.com/go-delve/delve/cmd/dlv@latest
+      go install golang.org/x/tools/gopls@latest
+      mkdir -p ~/src
+
+      if [ ! -x "$HOME/.local/bin/claude" ]; then
+        curl -fsSL https://claude.ai/install.sh | bash
+      fi
+
+      # dotfiles: clone over https (no forwarded agent during provisioning), push over ssh
+      if [ ! -d ~/dotfiles ]; then
+        git clone https://github.com/Andrei0872/dotfiles.git ~/dotfiles
+        git -C ~/dotfiles remote set-url --push origin git@github.com:Andrei0872/dotfiles.git
+      fi
+      mkdir -p ~/.config/nvim ~/.local/bin
+      ln -sf ~/dotfiles/nvim/* ~/.config/nvim
+      # Ubuntu names the fd binary `fdfind`
+      ln -sf /usr/bin/fdfind ~/.local/bin/fd
+
+      # local-up-cluster.sh runs the control plane via sudo only if /var/run/kubernetes isn't
+      # writable. /run is tmpfs, so pre-create it as us on every boot -> always the non-sudo path
+      # (otherwise the 1st run leaves root-owned certs/audit log that later runs can't open).
+      echo "d /run/kubernetes 0755 $(id -un) root -" | sudo tee /etc/tmpfiles.d/kubernetes.conf
+      sudo systemd-tmpfiles --create /etc/tmpfiles.d/kubernetes.conf
+
+probes:
+  - script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      if ! timeout 120s bash -c "until test -x /usr/local/go/bin/go; do sleep 3; done"; then
+        echo >&2 "go is not installed yet"
+        exit 1
+      fi
+    hint: "Waiting for provisioning (Go install) to finish"
+
+message: |
+  VM ready. Next:
+    limactl shell k8s-dev
+    cd ~/src && git clone https://github.com/kubernetes/kubernetes && cd kubernetes
+    hack/install-etcd.sh && export PATH="$PWD/third_party/etcd:$PATH"
+    make DBG=1 WHAT="cmd/kubelet cmd/kube-apiserver cmd/kube-scheduler cmd/kube-controller-manager"
