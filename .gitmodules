@@ -2,3 +2,8 @@
 	path = etcd/_upstream
 	url = https://github.com/etcd-io/etcd.git
 	ignore = dirty
+[submodule "kubernetes"]
+	path = kubernetes/_upstream
+	url = https://github.com/kubernetes/kubernetes.git
+	ignore = dirty
+	shallow = true
