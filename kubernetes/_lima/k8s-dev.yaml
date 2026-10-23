@@ -97,6 +97,12 @@ provision:
       fi
       mkdir -p ~/.config/nvim ~/.local/bin
       ln -sf ~/dotfiles/nvim/* ~/.config/nvim
+      # tmux: config + TPM; install_plugins fetches the plugins listed in tmux.conf (skips installed ones)
+      ln -sf ~/dotfiles/tmux/tmux.conf ~/.tmux.conf
+      if [ ! -d ~/.tmux/plugins/tpm ]; then
+        git clone https://github.com/tmux-plugins/tpm ~/.tmux/plugins/tpm
+      fi
+      ~/.tmux/plugins/tpm/bin/install_plugins
       # Ubuntu names the fd binary `fdfind`
       ln -sf /usr/bin/fdfind ~/.local/bin/fd
 
