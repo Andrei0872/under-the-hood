@@ -1,4 +1,4 @@
-Make the node and CoreDNS waits in local-up-cluster.sh configurable.
+Make the startup waits in local-up-cluster.sh configurable.
 
 The script exits, and tears the cluster down, if the node doesn't register
 within 60s, become Ready within 300s, or CoreDNS isn't up within 300s. These
@@ -7,21 +7,27 @@ takes the whole cluster down. This adds WAIT_FOR_NODE, WAIT_FOR_NODE_READY
 and WAIT_FOR_COREDNS, next to the existing WAIT_FOR_URL_API_SERVER, with the
 same defaults.
 
+It also adds COREDNS_RESTART_DELAY for the fixed 30s sleep after the CoreDNS
+pods are recreated. The sleep doesn't wait for anything specific: the delete
+already waits for the old pods to go, and the next step polls until the new
+pod is Ready. COREDNS_RESTART_DELAY=0 skips it.
+
 diff --git a/hack/local-up-cluster.sh b/hack/local-up-cluster.sh
-index fe6616f69ed..72804a8e296 100755
+index fe6616f69ed..a4ecf4c0969 100755
 --- a/hack/local-up-cluster.sh
 +++ b/hack/local-up-cluster.sh
-@@ -82,6 +82,9 @@ DNS_MEMORY_LIMIT=${KUBE_DNS_MEMORY_LIMIT:-170Mi}
+@@ -82,6 +82,10 @@ DNS_MEMORY_LIMIT=${KUBE_DNS_MEMORY_LIMIT:-170Mi}
  DNS_DOMAIN=${KUBE_DNS_NAME:-"cluster.local"}
  WAIT_FOR_URL_API_SERVER=${WAIT_FOR_URL_API_SERVER:-60}
  MAX_TIME_FOR_URL_API_SERVER=${MAX_TIME_FOR_URL_API_SERVER:-1}
 +WAIT_FOR_NODE=${WAIT_FOR_NODE:-60}
 +WAIT_FOR_NODE_READY=${WAIT_FOR_NODE_READY:-300}
 +WAIT_FOR_COREDNS=${WAIT_FOR_COREDNS:-300}
++COREDNS_RESTART_DELAY=${COREDNS_RESTART_DELAY:-30}
  ENABLE_DAEMON=${ENABLE_DAEMON:-false}
  HOSTNAME_OVERRIDE=${HOSTNAME_OVERRIDE:-"127.0.0.1"}
  EXTERNAL_CLOUD_PROVIDER=${EXTERNAL_CLOUD_PROVIDER:-false}
-@@ -804,7 +807,7 @@ function wait_node_ready(){
+@@ -804,7 +808,7 @@ function wait_node_ready(){
    # check the nodes information after kubelet daemon start
    local nodes_stats="${KUBECTL} --kubeconfig '${CERT_DIR}/admin.kubeconfig' get nodes"
    local node_name=$HOSTNAME_OVERRIDE
@@ -30,7 +36,7 @@ index fe6616f69ed..72804a8e296 100755
    local interval_time=2
    kube::util::wait_for_success "$system_node_wait_time" "$interval_time" "$nodes_stats | grep $node_name"
    if [ $? == "1" ]; then
-@@ -812,7 +815,7 @@ function wait_node_ready(){
+@@ -812,7 +816,7 @@ function wait_node_ready(){
      exit 1
    fi
  
@@ -39,7 +45,7 @@ index fe6616f69ed..72804a8e296 100755
    local node_ready="${KUBECTL} --kubeconfig '${CERT_DIR}/admin.kubeconfig' wait --for=condition=Ready --timeout=60s nodes $node_name"
    kube::util::wait_for_success "$system_node_ready_time" "$interval_time" "$node_ready"
    if [ $? == "1" ]; then
-@@ -827,7 +830,7 @@ function wait_coredns_available(){
+@@ -827,11 +831,11 @@ function wait_coredns_available(){
    fi
  
    local interval_time=2
@@ -48,3 +54,8 @@ index fe6616f69ed..72804a8e296 100755
  
    # kick the coredns pods to be recreated
    ${KUBECTL} --kubeconfig="${CERT_DIR}/admin.kubeconfig" -n kube-system delete pods -l k8s-app=kube-dns
+-  sleep 30
++  sleep "${COREDNS_RESTART_DELAY}"
+ 
+   local coredns_pods_ready="${KUBECTL} --kubeconfig '${CERT_DIR}/admin.kubeconfig' wait --for=condition=Ready --timeout=60s pods -l k8s-app=kube-dns -n kube-system"
+   kube::util::wait_for_success "$coredns_wait_time" "$interval_time" "$coredns_pods_ready"

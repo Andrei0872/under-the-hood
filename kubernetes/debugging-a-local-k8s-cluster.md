@@ -96,12 +96,14 @@ It relies on the cluster script running every component as `${GO_OUT}/<name>`. T
 
 A paused component holds up the rest of startup: the cluster script waits for the apiserver to be healthy, the node to register and become Ready, and CoreDNS to be available, and exits (taking the cluster down) when a wait runs out. [`_patches/0001-configurable-startup-waits.patch`](_patches/0001-configurable-startup-waits.patch) makes the hardcoded waits configurable (`WAIT_FOR_NODE`, `WAIT_FOR_NODE_READY`, `WAIT_FOR_COREDNS`, next to the existing `WAIT_FOR_URL_API_SERVER`), and the script sets all of them to an hour (`DEBUG_WAIT=3600`, which you can override). Nothing else changes: CoreDNS and the rest of the cluster are still set up as usual.
 
+The patch also adds `COREDNS_RESTART_DELAY`. Once the node is up, the cluster script deletes the CoreDNS pods so that they are recreated (the first pod usually crashes because kube-proxy hasn't set up its rules yet), then sleeps for a fixed 30s. The sleep doesn't wait for anything specific: the delete already waits for the old pods to go, and the next step polls until the new pod is Ready. `COREDNS_RESTART_DELAY=0` skips it.
+
 1. **Build the components with debug info**, as in [Debugging in Action](#debugging-in-action).
 
 2. **Start the cluster with the components to debug.** Run this from the repo root, with any combination of the components above:
 
    ```bash
-   STARTUP_DEBUG=kube-apiserver,kubelet kubernetes/_scripts/startup-debug.sh
+   STARTUP_DEBUG=kube-apiserver COREDNS_RESTART_DELAY=0 kubernetes/_scripts/startup-debug.sh
    ```
 
    The script prints the port of each paused component. Arguments are passed to `local-up-cluster.sh`, except `-O`, which would replace `GO_OUT`.
