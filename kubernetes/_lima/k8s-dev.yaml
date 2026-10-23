@@ -61,7 +61,7 @@ provision:
       cat > /etc/profile.d/k8s.sh <<'EOF'
       export KUBERNETES_PROVIDER=local
       export KUBECONFIG=/var/run/kubernetes/admin.kubeconfig
-      export PATH=$HOME/src/kubernetes/third_party/etcd:$PATH
+      export PATH=$HOME/src/under-the-hood/kubernetes/_upstream/third_party/etcd:$PATH
       EOF
 
       NVIM_VERSION=v0.11.7
@@ -83,6 +83,7 @@ provision:
       export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin
       go install github.com/go-delve/delve/cmd/dlv@latest
       go install golang.org/x/tools/gopls@latest
+      go install github.com/cloudflare/cfssl/cmd/cfssl@latest github.com/cloudflare/cfssl/cmd/cfssljson@latest
       mkdir -p ~/src
 
       if [ ! -x "$HOME/.local/bin/claude" ]; then
@@ -116,8 +117,9 @@ probes:
     hint: "Waiting for provisioning (Go install) to finish"
 
 message: |
-  VM ready. Next:
+  VM ready. Next (details: kubernetes/debugging-a-local-k8s-cluster.md):
     limactl shell k8s-dev
-    cd ~/src && git clone https://github.com/kubernetes/kubernetes && cd kubernetes
-    hack/install-etcd.sh && export PATH="$PWD/third_party/etcd:$PATH"
-    make DBG=1 WHAT="cmd/kubelet cmd/kube-apiserver cmd/kube-scheduler cmd/kube-controller-manager"
+    git clone git@github.com:Andrei0872/under-the-hood.git ~/src/under-the-hood
+    cd ~/src/under-the-hood && git submodule update --init --depth 1 --filter=blob:none --single-branch kubernetes/_upstream
+    cd kubernetes/_upstream && hack/install-etcd.sh
+    make DBG=1 WHAT="cmd/kubectl cmd/kubelet cmd/kube-apiserver cmd/kube-scheduler cmd/kube-controller-manager cmd/kube-proxy"
