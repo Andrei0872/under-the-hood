@@ -104,3 +104,5 @@ If no arguments are provided, use the defaults. The `<current-project-slug>` is 
 - If a message contains both a question and a statement, extract only the question part.
 - Code snippets that are part of a question should be included inline under the question.
 - The output directory must be created if it does not exist.
+- Include the assistant's **Try:** suggestions next to the question they relate to, as a nested `**Try:**` sub-bullet. Keep commands exactly as suggested, in a code block if they span several lines, and skip the sub-bullet for questions that had no suggestion. Try lines are the only assistant text in the log, so they don't change the rule against paraphrasing the user's questions.
+- Never run a **Try:** suggestion yourself, during extraction or at any other time. They are for the user to run, so only record them.
