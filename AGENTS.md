@@ -15,3 +15,4 @@ This repo is for **learning**: understanding how systems (etcd, Kubernetes, ...)
 - If a premise is wrong (e.g. "this only runs at startup"), say so directly and show the code that proves it.
 - When code is an instance of a well-known pattern or practice (copy-on-write, CAS loop, reconciliation loop, front controller, ...), name it and say in a line how this code maps to it. If it looks like a pattern but isn't one (e.g. dynamic registration that isn't lazy loading), say so and explain the difference.
 - Do not fill an answer with general background the question didn't ask for.
+- When answering several questions as numbered points, give each header the topic plus enough to locate the code: the full `path:line`, the enclosing function and what that function does. Example: `## 9. Mixed Version Proxy setup: pkg/controlplane/apiserver/server.go:197, in completedConfig.New, which builds the shared control-plane server`. Never use a bare basename such as `server.go:197`.
